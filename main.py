@@ -21,7 +21,6 @@ try:
         password=os.getenv("REDIS_PASS"),
     )
     r.ping()
-    print("redis connected")
 except redis.ConnectionError as e:
     logger.error(f"Fail to connect to redis: {e}")
 
@@ -50,9 +49,8 @@ async def getWeather(location: str, request: Request):
         logger.info(
             f"request completed for {request.client.host}:{request.client.port}"
         )
-        toCache = res.text
-        result = json.loads(toCache)
-        r.setex(key, 3000, toCache)
+        result = json.loads(res.text)
+        r.setex(key, 300, json.dumps(result))
     except redis.RedisError as e:
         logger.error(f"Redis error:{e}")
     except requests.ConnectionError as e:
