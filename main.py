@@ -1,9 +1,10 @@
+import asyncio
 import json
 import logging
 import os
 
+import aiohttp
 import redis
-import requests
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -38,37 +39,41 @@ async def getWeather(location: str, request: Request):
     try:
         data = r.get(key)
         if data:
-            return data
+            return json.loads(data)
     except redis.RedisError as e:
         logger.error(f"Redis error: {e}")
 
     try:
-        res = requests.get(
-            f"https://api.seniverse.com/v3/weather/now.json?key={os.getenv('PRIV_KEY')}&location={location}"
-        )
-        logger.info(
-            f"request completed for {request.client.host}:{request.client.port}"
-        )
-        result = json.loads(res.text)
-        r.setex(key, 300, json.dumps(result))
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"https://api.seniverse.com/v3/weather/now.json?key={os.getenv('PRIV_KEY')}&location={location}",
+            ) as res:
+                logger.info(
+                    f"request completed for {request.client.host}:{request.client.port}"
+                )
+                result = await res.text(encoding="utf-8")
+                r.setex(key, 300, result)
+                return json.loads(result)
     except redis.RedisError as e:
         logger.error(f"Redis error:{e}")
-    except requests.ConnectionError as e:
+    except aiohttp.ClientResponseError as e:
         logger.error(
-            f"An connection error for {request.client.host}:{request.client.port}: {e}"
+            f"A reponse error for {request.client.host}:{request.client.port}: {e}"
         )
-    except requests.HTTPError as e:
-        logger.error(f"HTTP error for {request.client.host}:{request.client.port}: {e}")
-    except requests.TooManyRedirects as e:
+    except aiohttp.ClientConnectionError as e:
         logger.error(
-            f"Too many redirects for {request.client.host}:{request.client.port}: {e}"
+            f"Connection error for {request.client.host}:{request.client.port}: {e}"
+        )
+    except aiohttp.RedirectClientError as e:
+        logger.error(
+            f"Redirect error for {request.client.host}:{request.client.port}: {e}"
         )
     except Exception as e:
         logger.error(
             f"Other errors for {request.client.host}:{request.client.port}: {e}"
         )
 
-    return result
+    return {"status": "Some error occured"}
 
 
 if __name__ == "__main__":
